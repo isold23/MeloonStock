@@ -1,0 +1,5 @@
+{
+  "name": "StockInsight AI",
+  "description": "Professional stock analysis tool providing 10-point deep dives into companies using Gemini AI.",
+  "requestFramePermissions": []
+}
