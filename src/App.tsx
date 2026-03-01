@@ -84,6 +84,31 @@ export default function App() {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const model = "gemini-3.1-pro-preview";
 
+    const generateWithRetry = async (prompt: string, stepId: number, retries = 3, delay = 2000) => {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
+            }
+          });
+          return response.text || "未能生成分析内容。";
+        } catch (error: any) {
+          const isRateLimit = error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED';
+          if (isRateLimit && attempt < retries) {
+            const backoff = delay * Math.pow(2, attempt);
+            console.warn(`Step ${stepId} rate limited. Retrying in ${backoff}ms... (Attempt ${attempt + 1}/${retries})`);
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            continue;
+          }
+          throw error;
+        }
+      }
+      return "分析失败：重试次数过多。";
+    };
+
     for (let i = 0; i < ANALYSIS_STEPS.length; i++) {
       const step = ANALYSIS_STEPS[i];
       
@@ -91,19 +116,20 @@ export default function App() {
       setActiveReportId(step.id);
 
       try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: step.prompt(company),
-          config: {
-            systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
-          }
-        });
-
-        const text = response.text || "未能生成分析内容。";
+        const text = await generateWithRetry(step.prompt(company), step.id);
         setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: text, status: 'completed' } : r));
-      } catch (error) {
+        
+        // Add a small delay between steps to avoid hitting rate limits too quickly
+        if (i < ANALYSIS_STEPS.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error: any) {
         console.error(`Error in step ${step.id}:`, error);
-        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: "分析过程中发生错误，请检查 API Key 或网络连接。", status: 'error' } : r));
+        let errorMsg = "分析过程中发生错误，请检查 API Key 或网络连接。";
+        if (error?.message?.includes('429')) {
+          errorMsg = "API 请求频率过高（429 错误）。系统已尝试重试，但仍未成功。请稍后再试。";
+        }
+        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: errorMsg, status: 'error' } : r));
       }
     }
 
