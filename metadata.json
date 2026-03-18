@@ -1,5 +1,5 @@
 {
   "name": "StockInsight AI",
-  "description": "Professional stock analysis tool providing 10-point deep dives into companies using Gemini AI.",
+  "description": "专业级股票分析工具，利用 Gemini AI 提供 10 个维度的公司深度研究报告。",
   "requestFramePermissions": []
 }

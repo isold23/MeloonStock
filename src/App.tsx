@@ -137,6 +137,20 @@ export default function App() {
     setActiveReportId(null);
   };
 
+  const scrollToSection = (id: number) => {
+    const element = document.getElementById(`report-${id}`);
+    if (element) {
+      const headerOffset = 100;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: "smooth"
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A] font-sans selection:bg-emerald-100">
       {/* Header */}
@@ -154,9 +168,9 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Input & Status */}
-        <div className="lg:col-span-4 space-y-6">
+        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 h-fit">
           <section className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-black/40 mb-4 flex items-center gap-2">
               <Search className="w-4 h-4" />
@@ -219,7 +233,7 @@ export default function App() {
           </section>
 
           <section className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-black/40 mb-4">分析进度</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-black/40 mb-4">分析维度</h2>
             <div className="space-y-3">
               {reports.map((report) => (
                 <div 
@@ -229,7 +243,12 @@ export default function App() {
                     activeReportId === report.id ? "bg-black/5 border-black/10" : "bg-transparent border-transparent",
                     report.status === 'completed' ? "text-emerald-600" : ""
                   )}
-                  onClick={() => report.status === 'completed' && setActiveReportId(report.id)}
+                  onClick={() => {
+                    if (report.status !== 'idle') {
+                      setActiveReportId(report.id);
+                      scrollToSection(report.id);
+                    }
+                  }}
                 >
                   <div className="flex items-center gap-3">
                     <div className={cn(
@@ -241,7 +260,7 @@ export default function App() {
                     </div>
                     <span className="text-sm font-medium">{report.title.split(' ')[0]}</span>
                   </div>
-                  {report.status === 'completed' && <ChevronRight className="w-4 h-4 opacity-40" />}
+                  {report.status !== 'idle' && <ChevronRight className="w-4 h-4 opacity-40" />}
                 </div>
               ))}
             </div>
