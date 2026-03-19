@@ -170,7 +170,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left Column: Input & Status */}
-        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 h-fit">
+        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto pr-2 custom-scrollbar">
           <section className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-black/40 mb-4 flex items-center gap-2">
               <Search className="w-4 h-4" />
