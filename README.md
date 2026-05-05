@@ -1,20 +1,55 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# StockInsight AI - 专业级 10 点深度股票分析工具
 
-# Run and deploy your AI Studio app
+StockInsight AI 是一款基于 Google Gemini AI 构建的专业级投资研究工具。它能够针对特定上市公司生成 10 个维度的深度分析报告，旨在为投资者提供客观、全面且深度的决策参考。
 
-This contains everything you need to run your app locally.
+## 🌟 核心功能
 
-View your app in AI Studio: https://ai.studio/apps/d403c649-cdd3-4577-b1aa-3d7757c5538f
+1.  **10 维度深度透视**：
+    *   **业务理解 (Business Understanding)**：用简单术语解释业务本质、解决的问题及客户选择原因。
+    *   **收入分解 (Revenue Breakdown)**：拆解收入流、增长趋势及核心依赖。
+    *   **行业背景 (Industry Background)**：分析行业现状、长期趋势及优劣势。
+    *   **竞争格局 (Competitive Landscape)**：对比竞争对手的定价、产品、规模及护城河。
+    *   **财务质量 (Financial Quality)**：评估增长一致性、利润率、债务、现金流及资本配置。
+    *   **风险与下跌 (Risks & Downside)**：识别业务、财务、监管等方面的最大潜在风险。
+    *   **管理层与执行 (Management & Execution)**：评估团队历史表现及对股东利益的决策。
+    *   **牛熊情景 (Bull/Bear Scenarios)**：展望未来 3-5 年的基本面乐观与悲观情景。
+    *   **估值思考 (Valuation Thoughts)**：探讨估值逻辑、关键假设及高低估依据。
+    *   **长期论文 (Long-term Thesis)**：总结长期投资论点、成功必要条件及失败迹象。
 
-## Run Locally
+2.  **AI 驱动的深度见解**：集成 Gemini 3.1 Pro 模型，提供具备逻辑深度的专业级财务和策略分析。
+3.  **交互式阅读体验**：
+    *   **侧边栏导航**：点击分析维度即可平滑滚动至对应章节。
+    *   **固定侧边栏**：在大屏幕下固定左侧控制面板，方便长篇阅读时的进度追踪。
+    *   **无感滚动条**：隐藏视觉干扰，提供沉浸式的阅读环境。
+4.  **稳健的系统设计**：
+    *   **速率限制处理**：内置指数退避重试逻辑，确保在生成多维度长文时的 API 稳定性。
+    *   **Markdown 渲染**：专业排版的报告格式，支持复杂的结构化输出。
 
-**Prerequisites:**  Node.js
+## 🛠️ 技术栈
 
+-   **前端框架**：React 19 + TypeScript
+-   **样式方案**：Tailwind CSS 4
+-   **动画库**：Framer Motion
+-   **图标库**：Lucide React
+-   **AI SDK**：@google/genai (Gemini API)
+-   **内容渲染**：react-markdown
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## 🚀 快速开始
+
+1.  **配置 API Key**：在 AI Studio 的 Secrets 面板中配置 `GEMINI_API_KEY`。
+2.  **输入公司信息**：
+    *   公司名称（例如：腾讯控股）
+    *   股票代码（例如：0700.HK）
+    *   所属行业（例如：互联网）
+3.  **开始分析**：点击“开始 10 点深度分析”，系统将逐步生成各维度的专业报告。
+
+## 📅 版本记录
+
+-   **v1.0**：初始版本发布，支持 10 维度分析报告。
+-   **v1.1**：优化 API 频率限制，添加重试逻辑和步骤间延迟。
+-   **v1.2**：优化 UI 交互，增加侧边栏固定和点击跳转导航，隐藏滚动条 UI。
+-   **v1.3**：增加 Favicon、SEO 元数据及 Google Analytics 支持。
+
+---
+
+**⚠️ 免责声明**：投资有风险，入市需谨慎。分析报告由 AI 生成，仅供研究参考，不构成任何投资建议或买卖依据。
