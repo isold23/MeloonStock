@@ -21,12 +21,15 @@ import {
   RefreshCw,
   BarChart3,
   Building2,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -73,6 +76,46 @@ export default function App() {
   );
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [activeReportId, setActiveReportId] = useState<number | null>(null);
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const exportToPDF = () => {
+    const element = document.getElementById('report-content');
+    if (!element) return;
+
+    setIsExporting(true);
+    
+    // Add a temporary title for the PDF
+    const reportTitle = document.createElement('div');
+    reportTitle.innerHTML = `
+      <div style="padding: 20px; text-align: center; border-bottom: 2px solid #000; margin-bottom: 30px;">
+        <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 10px;">StockInsight AI 投资深度分析报告</h1>
+        <p style="font-size: 16px; color: #666;">公司: ${company.name} (${company.ticker}) | 行业: ${company.industry}</p>
+        <p style="font-size: 12px; color: #999; margin-top: 5px;">生成日期: ${new Date().toLocaleDateString()} | 访问更多工具: stock.meloon.top</p>
+      </div>
+    `;
+    element.prepend(reportTitle);
+
+    const opt = {
+      margin: [0.5, 0.5] as [number, number],
+      filename: `${company.name}_${company.ticker}_分析报告.pdf`,
+      image: { type: 'jpeg' as any, quality: 0.98 },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true,
+        letterRendering: true,
+        scrollY: -window.scrollY,
+        backgroundColor: '#ffffff'
+      },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' as const },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+    };
+
+    html2pdf().set(opt).from(element).save().finally(() => {
+      element.removeChild(reportTitle);
+      setIsExporting(false);
+    });
+  };
 
   const runAnalysis = async () => {
     if (!company.name || !company.ticker) return;
@@ -157,10 +200,12 @@ export default function App() {
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-black/5 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-              <TrendingUp className="text-white w-5 h-5" />
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">StockInsight AI</h1>
+            <a href="http://stock.meloon.top" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+                <TrendingUp className="text-white w-5 h-5" />
+              </div>
+              <h1 className="text-xl font-semibold tracking-tight">StockInsight AI</h1>
+            </a>
           </div>
           <div className="text-xs font-mono text-black/40 uppercase tracking-widest">
             Professional Grade Analysis
@@ -286,17 +331,47 @@ export default function App() {
               </motion.div>
             ) : (
               <div className="space-y-8">
-                {reports.filter(r => r.status !== 'idle').map((report) => (
-                  <motion.section 
-                    key={report.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    id={`report-${report.id}`}
-                    className={cn(
-                      "bg-white rounded-3xl p-8 shadow-sm border transition-all",
-                      activeReportId === report.id ? "border-black/20 ring-4 ring-black/5" : "border-black/5"
-                    )}
-                  >
+                {/* Export Header */}
+                <div className="flex items-center justify-between mb-4 px-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                    <span className="text-sm font-medium text-black/60">
+                      {isAnalyzing ? "分析引擎运行中..." : "分析完成"}
+                    </span>
+                  </div>
+                  {!isAnalyzing && reports.some(r => r.status === 'completed') && (
+                    <button
+                      onClick={exportToPDF}
+                      disabled={isExporting}
+                      className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-medium hover:bg-emerald-100 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-100"
+                    >
+                      {isExporting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          导出中...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          导出 PDF 报告
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                <div id="report-content" className="space-y-8">
+                  {reports.filter(r => r.status !== 'idle').map((report) => (
+                    <motion.section 
+                      key={report.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      id={`report-${report.id}`}
+                      className={cn(
+                        "bg-white rounded-3xl p-8 shadow-sm border transition-all page-break-inside-avoid mb-8",
+                        activeReportId === report.id ? "border-black/20 ring-4 ring-black/5" : "border-black/5"
+                      )}
+                    >
                     <div className="flex items-center gap-4 mb-6">
                       <div className="w-12 h-12 bg-black text-white rounded-2xl flex items-center justify-center shadow-lg shadow-black/10">
                         {report.icon}
@@ -324,6 +399,7 @@ export default function App() {
                     )}
                   </motion.section>
                 ))}
+                </div>
               </div>
             )}
           </AnimatePresence>
@@ -332,7 +408,11 @@ export default function App() {
 
       {/* Footer */}
       <footer className="max-w-7xl mx-auto px-6 py-12 border-t border-black/5 text-center text-black/40 text-xs">
-        <p>© 2026 StockInsight AI. 投资有风险，入市需谨慎。分析报告仅供参考，不构成投资建议。</p>
+        <p className="mb-2">
+          © 2026 <a href="http://stock.meloon.top" target="_blank" rel="noopener noreferrer" className="hover:text-black transition-colors">StockInsight AI</a>. 
+          投资有风险，入市需谨慎。分析报告仅供参考，不构成投资建议。
+        </p>
+        <p><a href="http://stock.meloon.top" target="_blank" rel="noopener noreferrer" className="underline hover:text-black">stock.meloon.top</a></p>
       </footer>
     </div>
   );

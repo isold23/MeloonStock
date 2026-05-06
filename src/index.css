@@ -8,4 +8,10 @@
   .custom-scrollbar::-webkit-scrollbar {
     display: none; /* Chrome, Safari and Opera */
   }
+  
+  /* PDF Export Helpers */
+  .page-break-inside-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
 }
