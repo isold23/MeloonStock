@@ -125,7 +125,7 @@ export default function App() {
     setReports(newReports);
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const model = "gemini-2.5-flash-lite";
+    const model = "gemma-4-31b";
 
     const generateWithRetry = async (prompt: string, stepId: number, retries = 3, delay = 2000) => {
       for (let attempt = 0; attempt <= retries; attempt++) {
