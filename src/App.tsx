@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { 
   Search, 
   TrendingUp, 
@@ -124,22 +123,24 @@ export default function App() {
     const newReports = reports.map(r => ({ ...r, content: '', status: 'idle' as const }));
     setReports(newReports);
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const model = "gemini-2.5-flash";
-
     const generateWithRetry = async (prompt: string, stepId: number, retries = 3, delay = 2000) => {
       for (let attempt = 0; attempt <= retries; attempt++) {
         try {
-          const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-              systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
-            }
+          const res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, stepId })
           });
-          return response.text || "未能生成分析内容。";
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({ error: res.statusText }));
+            throw new Error(errData.error || `HTTP ${res.status}`);
+          }
+
+          const data = await res.json();
+          return data.text || "未能生成分析内容。";
         } catch (error: any) {
-          const isRateLimit = error?.message?.includes('429') || error?.status === 'RESOURCE_EXHAUSTED';
+          const isRateLimit = error?.message?.includes('429') || error?.status === 429;
           if (isRateLimit && attempt < retries) {
             const backoff = delay * Math.pow(2, attempt);
             console.warn(`Step ${stepId} rate limited. Retrying in ${backoff}ms... (Attempt ${attempt + 1}/${retries})`);
@@ -168,11 +169,11 @@ export default function App() {
         }
       } catch (error: any) {
         console.error(`Error in step ${step.id}:`, error);
-        let errorMsg = "分析过程中发生错误，请检查 API Key 或网络连接。";
+        let errorMsg = error?.message || "分析过程中发生错误，请检查 API Key 或网络连接。";
         if (error?.message?.includes('429')) {
           errorMsg = "API 请求频率过高（429 错误）。系统已尝试重试，但仍未成功。请稍后再试。";
         }
-        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: errorMsg, status: 'error' } : r));
+        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: `⚠️ **分析失败**\n\n${errorMsg}`, status: 'error' } : r));
       }
     }
 
