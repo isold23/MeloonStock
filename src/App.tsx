@@ -175,7 +175,9 @@ export default function App() {
             const errJson = await res.json();
             errorText = errJson.error || errJson.message || `HTTP ${res.status}`;
           } catch {
-            if (res.status === 405 || res.status === 502 || res.status === 503 || res.status === 504) {
+            if (res.status === 405) {
+              errorText = `HTTP 405 (Method Not Allowed): 当前站点部署为纯静态托管，后端 /api/analyze 未生效。若部署在 Cloudflare Pages，请确保包含 functions/ 目录并在平台环境变量中配置 GEMINI_API_KEY。`;
+            } else if (res.status === 502 || res.status === 503 || res.status === 504) {
               errorText = `后端服务正在建立连接 (HTTP ${res.status})，即将自动重试`;
             } else {
               errorText = `HTTP ${res.status}: ${res.statusText || '请求异常'}`;
@@ -189,17 +191,18 @@ export default function App() {
       } catch (error: any) {
         const errMessage = error?.message || '';
         const isTransient = 
-          errMessage.includes('429') || 
-          errMessage.includes('503') || 
-          errMessage.includes('502') || 
-          errMessage.includes('504') || 
-          errMessage.includes('405') || 
-          errMessage.includes('正在建立连接') ||
-          errMessage.includes('RESOURCE_EXHAUSTED') || 
-          errMessage.includes('UNAVAILABLE') ||
-          errMessage.includes('Failed to fetch') ||
-          errMessage.includes('NetworkError') ||
-          errMessage.includes('network');
+          !errMessage.includes('405') && (
+            errMessage.includes('429') || 
+            errMessage.includes('503') || 
+            errMessage.includes('502') || 
+            errMessage.includes('504') || 
+            errMessage.includes('正在建立连接') ||
+            errMessage.includes('RESOURCE_EXHAUSTED') || 
+            errMessage.includes('UNAVAILABLE') ||
+            errMessage.includes('Failed to fetch') ||
+            errMessage.includes('NetworkError') ||
+            errMessage.includes('network')
+          );
 
         if (isTransient && attempt < retries) {
           const backoff = delay * Math.pow(2, attempt);
