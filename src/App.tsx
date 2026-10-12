@@ -27,8 +27,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-// @ts-ignore
-import html2pdf from 'html2pdf.js';
+import { toCanvas } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -77,43 +77,87 @@ export default function App() {
   const [activeReportId, setActiveReportId] = useState<number | null>(null);
 
   const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const element = document.getElementById('report-content');
     if (!element) return;
 
     setIsExporting(true);
-    
-    // Add a temporary title for the PDF
-    const reportTitle = document.createElement('div');
-    reportTitle.innerHTML = `
-      <div style="padding: 20px; text-align: center; border-bottom: 2px solid #000; margin-bottom: 30px;">
-        <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 10px;">StockInsight AI 投资深度分析报告</h1>
-        <p style="font-size: 16px; color: #666;">公司: ${company.name} (${company.ticker}) | 行业: ${company.industry}</p>
-        <p style="font-size: 12px; color: #999; margin-top: 5px;">生成日期: ${new Date().toLocaleDateString()} | 访问更多工具: stock.meloon.top</p>
-      </div>
-    `;
-    element.prepend(reportTitle);
+    setExportError(null);
 
-    const opt = {
-      margin: [0.5, 0.5] as [number, number],
-      filename: `${company.name}_${company.ticker}_分析报告.pdf`,
-      image: { type: 'jpeg' as any, quality: 0.98 },
-      html2canvas: { 
-        scale: 2, 
-        useCORS: true,
-        letterRendering: true,
-        scrollY: -window.scrollY,
-        backgroundColor: '#ffffff'
-      },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' as const },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-    };
+    try {
+      // Use html-to-image to rasterize DOM. Natively supports modern Tailwind v4 OKLCH colors, typography, SVGs.
+      const canvas = await toCanvas(element, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        skipFonts: true,
+        filter: (node) => {
+          if (node instanceof HTMLElement) {
+            // Exclude action buttons (like retry single step) from the PDF
+            if (node.tagName === 'BUTTON') return false;
+            if (node.classList?.contains('no-export')) return false;
+          }
+          return true;
+        }
+      });
 
-    html2pdf().set(opt).from(element).save().finally(() => {
-      element.removeChild(reportTitle);
+      // Generate multi-page PDF using jsPDF
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 12; // 12mm page margin
+      const contentWidth = pageWidth - margin * 2; // 186mm
+      const contentHeight = pageHeight - margin * 2; // 273mm
+
+      // Height of one A4 printable area in canvas pixel coordinate space
+      const pageCanvasHeight = Math.floor(canvas.width * (contentHeight / contentWidth));
+
+      let currentY = 0;
+      let pageNumber = 0;
+
+      while (currentY < canvas.height) {
+        if (pageNumber > 0) {
+          pdf.addPage();
+        }
+
+        const remainingCanvasHeight = canvas.height - currentY;
+        const sliceHeight = Math.min(pageCanvasHeight, remainingCanvasHeight);
+
+        // Offscreen canvas for this single page slice to guarantee clean layout and borders
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = pageCanvasHeight;
+        const ctx = pageCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          ctx.drawImage(
+            canvas,
+            0, currentY, canvas.width, sliceHeight,
+            0, 0, canvas.width, sliceHeight
+          );
+        }
+
+        const sliceImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
+        const sliceImgHeightMm = (sliceHeight * contentWidth) / canvas.width;
+
+        pdf.addImage(sliceImgData, 'JPEG', margin, margin, contentWidth, sliceImgHeightMm);
+
+        currentY += sliceHeight;
+        pageNumber++;
+      }
+
+      const safeName = (company.name || '公司').replace(/[/\\?%*:|"<>]/g, '_');
+      const safeTicker = (company.ticker || '代码').replace(/[/\\?%*:|"<>]/g, '_');
+      const filename = `${safeName}_${safeTicker}_投资分析报告.pdf`;
+      pdf.save(filename);
+    } catch (err: any) {
+      console.error('PDF export error:', err);
+      setExportError(err?.message || '生成 PDF 失败，请稍后重试');
+    } finally {
       setIsExporting(false);
-    });
+    }
   };
 
   const executeGenerate = async (prompt: string, stepId: number, retries = 3, delay = 1500) => {
@@ -389,27 +433,49 @@ export default function App() {
                     </span>
                   </div>
                   {!isAnalyzing && reports.some(r => r.status === 'completed') && (
-                    <button
-                      onClick={exportToPDF}
-                      disabled={isExporting}
-                      className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-sm font-medium hover:bg-emerald-100 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed border border-emerald-100"
-                    >
-                      {isExporting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          导出中...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          导出 PDF 报告
-                        </>
+                    <div className="flex flex-col items-end gap-1">
+                      <button
+                        onClick={exportToPDF}
+                        disabled={isExporting}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        title="下载完整分析报告"
+                      >
+                        {isExporting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            正在导出报告...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            导出报告
+                          </>
+                        )}
+                      </button>
+                      {exportError && (
+                        <p className="text-xs text-red-500 font-medium">{exportError}</p>
                       )}
-                    </button>
+                    </div>
                   )}
                 </div>
 
                 <div id="report-content" className="space-y-8">
+                  {/* PDF 报告封面标头 */}
+                  <div className="bg-white rounded-3xl p-8 border border-black/5 shadow-sm flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+                    <div>
+                      <div className="text-xs font-bold tracking-wider uppercase text-emerald-600 mb-2">
+                        STOCKINSIGHT AI 投资研究分析报告
+                      </div>
+                      <h1 className="text-3xl font-extrabold text-black">
+                        {company.name} <span className="text-xl text-black/50 font-semibold">({company.ticker})</span>
+                      </h1>
+                    </div>
+                    <div className="text-sm sm:text-right text-black/60 space-y-1">
+                      <div>所属行业：<span className="font-medium text-black">{company.industry || '综合'}</span></div>
+                      <div>生成日期：<span className="font-mono">{new Date().toLocaleDateString('zh-CN')}</span></div>
+                    </div>
+                  </div>
+
                   {reports.filter(r => r.status !== 'idle').map((report) => (
                     <motion.section 
                       key={report.id}
