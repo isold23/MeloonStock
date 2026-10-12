@@ -116,47 +116,88 @@ export default function App() {
     });
   };
 
+  const executeGenerate = async (prompt: string, stepId: number, retries = 3, delay = 1500) => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, stepId })
+        });
+
+        if (!res.ok) {
+          let errorText = '';
+          try {
+            const errJson = await res.json();
+            errorText = errJson.error || errJson.message || `HTTP ${res.status}`;
+          } catch {
+            if (res.status === 405 || res.status === 502 || res.status === 503 || res.status === 504) {
+              errorText = `后端服务正在建立连接 (HTTP ${res.status})，即将自动重试`;
+            } else {
+              errorText = `HTTP ${res.status}: ${res.statusText || '请求异常'}`;
+            }
+          }
+          throw new Error(errorText);
+        }
+
+        const data = await res.json();
+        return data.text || "未能生成分析内容。";
+      } catch (error: any) {
+        const errMessage = error?.message || '';
+        const isTransient = 
+          errMessage.includes('429') || 
+          errMessage.includes('503') || 
+          errMessage.includes('502') || 
+          errMessage.includes('504') || 
+          errMessage.includes('405') || 
+          errMessage.includes('正在建立连接') ||
+          errMessage.includes('RESOURCE_EXHAUSTED') || 
+          errMessage.includes('UNAVAILABLE') ||
+          errMessage.includes('Failed to fetch') ||
+          errMessage.includes('NetworkError') ||
+          errMessage.includes('network');
+
+        if (isTransient && attempt < retries) {
+          const backoff = delay * Math.pow(2, attempt);
+          console.warn(`第 ${stepId} 步暂态重试 (第 ${attempt + 1}/${retries} 次)，等待 ${backoff}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          continue;
+        }
+        throw error;
+      }
+    }
+    return "分析失败：重试次数过多，请稍后再试。";
+  };
+
+  const retrySingleReport = async (reportId: number) => {
+    if (isAnalyzing || !company.name || !company.ticker) return;
+    const step = ANALYSIS_STEPS.find(s => s.id === reportId);
+    if (!step) return;
+
+    setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'loading' } : r));
+    setActiveReportId(reportId);
+
+    try {
+      const text = await executeGenerate(step.prompt(company), step.id);
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, content: text, status: 'completed' } : r));
+    } catch (error: any) {
+      console.error(`Error retrying step ${reportId}:`, error);
+      let errorMsg = error?.message || "分析过程中发生错误，请稍后重试。";
+      if (errorMsg.includes('429')) {
+        errorMsg = "API 请求频率过高（429 错误）。系统已尝试重试，请稍后再试。";
+      } else if (errorMsg.includes('405')) {
+        errorMsg = "服务正在就绪中，请稍后再次点击重试。";
+      }
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, content: errorMsg, status: 'error' } : r));
+    }
+  };
+
   const runAnalysis = async () => {
     if (!company.name || !company.ticker) return;
 
     setIsAnalyzing(true);
     const newReports = reports.map(r => ({ ...r, content: '', status: 'idle' as const }));
     setReports(newReports);
-
-    const generateWithRetry = async (prompt: string, stepId: number, retries = 3, delay = 2000) => {
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-          const res = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt, stepId })
-          });
-
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(errData.error || `HTTP ${res.status}`);
-          }
-
-          const data = await res.json();
-          return data.text || "未能生成分析内容。";
-        } catch (error: any) {
-          const isTransient = error?.message?.includes('429') || 
-            error?.message?.includes('503') || 
-            error?.message?.includes('RESOURCE_EXHAUSTED') || 
-            error?.message?.includes('UNAVAILABLE') ||
-            error?.status === 429 ||
-            error?.status === 503;
-          if (isTransient && attempt < retries) {
-            const backoff = delay * Math.pow(2, attempt);
-            console.warn(`Step ${stepId} transient error. Retrying in ${backoff}ms... (Attempt ${attempt + 1}/${retries})`);
-            await new Promise(resolve => setTimeout(resolve, backoff));
-            continue;
-          }
-          throw error;
-        }
-      }
-      return "分析失败：重试次数过多。";
-    };
 
     for (let i = 0; i < ANALYSIS_STEPS.length; i++) {
       const step = ANALYSIS_STEPS[i];
@@ -165,20 +206,22 @@ export default function App() {
       setActiveReportId(step.id);
 
       try {
-        const text = await generateWithRetry(step.prompt(company), step.id);
+        const text = await executeGenerate(step.prompt(company), step.id);
         setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: text, status: 'completed' } : r));
         
         // Add a small delay between steps to avoid hitting rate limits too quickly
         if (i < ANALYSIS_STEPS.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 800));
         }
       } catch (error: any) {
         console.error(`Error in step ${step.id}:`, error);
         let errorMsg = error?.message || "分析过程中发生错误，请检查 API Key 或网络连接。";
         if (error?.message?.includes('429')) {
           errorMsg = "API 请求频率过高（429 错误）。系统已尝试重试，但仍未成功。请稍后再试。";
+        } else if (error?.message?.includes('405')) {
+          errorMsg = "服务正在就绪中，请点击下方重试按钮。";
         }
-        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: `⚠️ **分析失败**\n\n${errorMsg}`, status: 'error' } : r));
+        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: errorMsg, status: 'error' } : r));
       }
     }
 
@@ -394,9 +437,19 @@ export default function App() {
                         <p className="text-sm animate-pulse">正在深度挖掘数据并生成报告...</p>
                       </div>
                     ) : report.status === 'error' ? (
-                      <div className="p-6 bg-red-50 rounded-2xl border border-red-100 flex items-center gap-4 text-red-600">
-                        <AlertCircle className="w-6 h-6 shrink-0" />
-                        <p className="text-sm font-medium">{report.content}</p>
+                      <div className="p-6 bg-red-50/80 rounded-2xl border border-red-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-start sm:items-center gap-3 text-red-700">
+                          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 sm:mt-0" />
+                          <p className="text-sm font-medium">{report.content}</p>
+                        </div>
+                        <button
+                          onClick={() => retrySingleReport(report.id)}
+                          disabled={isAnalyzing}
+                          className="self-end sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-red-600 text-white rounded-xl text-xs font-medium hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          重试该维度
+                        </button>
                       </div>
                     ) : (
                       <div className="prose prose-slate max-w-none prose-headings:font-bold prose-headings:tracking-tight prose-p:text-black/70 prose-li:text-black/70">

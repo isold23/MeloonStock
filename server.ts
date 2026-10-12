@@ -10,7 +10,32 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // CORS and preflight handling
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   app.use(express.json({ limit: "10mb" }));
+
+  // Health and probe check routes
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "healthy", timestamp: Date.now() });
+  });
+
+  app.get("/api/analyze", (_req, res) => {
+    res.json({ 
+      status: "ready", 
+      endpoint: "/api/analyze", 
+      method: "POST",
+      models: ["gemini-3.1-flash-lite", "gemini-3.8-flash"] 
+    });
+  });
 
   // API route for Gemini stock analysis
   app.post("/api/analyze", async (req, res) => {
@@ -35,32 +60,37 @@ async function startServer() {
           }
         }
       });
-      const primaryModel = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
-      const fallbackModel = "gemini-3.8-flash";
 
-      let response;
-      try {
-        response = await ai.models.generateContent({
-          model: primaryModel,
-          contents: prompt,
-          config: {
-            systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
-          }
-        });
-      } catch (primaryErr: any) {
-        const errStr = primaryErr?.message || "";
-        if (errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("404") || errStr.includes("NOT_FOUND")) {
-          console.warn(`Primary model ${primaryModel} unavailable, falling back to ${fallbackModel}...`);
+      const candidateModels = [
+        process.env.GEMINI_MODEL,
+        "gemini-3.1-flash-lite",
+        "gemini-3.8-flash"
+      ].filter(Boolean) as string[];
+
+      let response: any = null;
+      let lastError: any = null;
+
+      for (const modelName of candidateModels) {
+        try {
           response = await ai.models.generateContent({
-            model: fallbackModel,
+            model: modelName,
             contents: prompt,
             config: {
               systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
             }
           });
-        } else {
-          throw primaryErr;
+          if (response?.text) {
+            break;
+          }
+        } catch (modelErr: any) {
+          lastError = modelErr;
+          console.warn(`Model ${modelName} encountered error:`, modelErr?.message || modelErr);
+          // Continue to next model fallback
         }
+      }
+
+      if (!response?.text && lastError) {
+        throw lastError;
       }
 
       const text = response?.text || "未能生成分析内容。";
@@ -91,17 +121,23 @@ async function startServer() {
     }
   });
 
+  // API error middleware
+  app.use("/api", (err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    console.error("API error middleware caught:", err);
+    res.status(err.status || 500).json({ error: err.message || "Internal server error" });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
