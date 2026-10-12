@@ -27,23 +27,61 @@ async function startServer() {
         });
       }
 
-      const ai = new GoogleGenAI({ apiKey });
-      const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
+      const ai = new GoogleGenAI({ 
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
         }
       });
+      const primaryModel = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+      const fallbackModel = "gemini-3.8-flash";
 
-      const text = response.text || "未能生成分析内容。";
+      let response;
+      try {
+        response = await ai.models.generateContent({
+          model: primaryModel,
+          contents: prompt,
+          config: {
+            systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
+          }
+        });
+      } catch (primaryErr: any) {
+        const errStr = primaryErr?.message || "";
+        if (errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("404") || errStr.includes("NOT_FOUND")) {
+          console.warn(`Primary model ${primaryModel} unavailable, falling back to ${fallbackModel}...`);
+          response = await ai.models.generateContent({
+            model: fallbackModel,
+            contents: prompt,
+            config: {
+              systemInstruction: "你是一位资深的股票分析师和投资专家。请用专业、客观、深入的语气进行分析。如果是中文请求，请用中文回答。保持格式整洁，使用Markdown进行排版。",
+            }
+          });
+        } else {
+          throw primaryErr;
+        }
+      }
+
+      const text = response?.text || "未能生成分析内容。";
       res.json({ text });
     } catch (error: any) {
       console.error("Gemini API Error:", error);
-      let errMsg = error?.message || "请求 AI 模型失败";
-      if (typeof errMsg === "string" && (errMsg.includes("API key not valid") || errMsg.includes("INVALID_ARGUMENT"))) {
+      let errMsg = "请求 AI 模型失败";
+      try {
+        if (typeof error?.message === "string") {
+          if (error.message.startsWith("{")) {
+            const parsed = JSON.parse(error.message);
+            errMsg = parsed?.error?.message || error.message;
+          } else {
+            errMsg = error.message;
+          }
+        }
+      } catch {
+        errMsg = error?.message || "请求 AI 模型失败";
+      }
+
+      if (errMsg.includes("API key not valid") || errMsg.includes("INVALID_ARGUMENT")) {
         errMsg = "Gemini API Key 无效。请在 AI Studio 设置 (Settings) 中配置有效的 GEMINI_API_KEY。";
       }
       res.status(400).json({ 

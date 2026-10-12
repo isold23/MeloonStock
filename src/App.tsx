@@ -140,10 +140,15 @@ export default function App() {
           const data = await res.json();
           return data.text || "未能生成分析内容。";
         } catch (error: any) {
-          const isRateLimit = error?.message?.includes('429') || error?.status === 429;
-          if (isRateLimit && attempt < retries) {
+          const isTransient = error?.message?.includes('429') || 
+            error?.message?.includes('503') || 
+            error?.message?.includes('RESOURCE_EXHAUSTED') || 
+            error?.message?.includes('UNAVAILABLE') ||
+            error?.status === 429 ||
+            error?.status === 503;
+          if (isTransient && attempt < retries) {
             const backoff = delay * Math.pow(2, attempt);
-            console.warn(`Step ${stepId} rate limited. Retrying in ${backoff}ms... (Attempt ${attempt + 1}/${retries})`);
+            console.warn(`Step ${stepId} transient error. Retrying in ${backoff}ms... (Attempt ${attempt + 1}/${retries})`);
             await new Promise(resolve => setTimeout(resolve, backoff));
             continue;
           }
