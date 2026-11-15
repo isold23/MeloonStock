@@ -3,544 +3,1561 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { 
-  Search, 
-  TrendingUp, 
-  PieChart, 
-  Globe, 
-  Users, 
-  ShieldAlert, 
-  Briefcase, 
-  LineChart, 
-  Scale, 
-  FileText,
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import {
+  Search,
   Loader2,
-  ChevronRight,
   RefreshCw,
-  BarChart3,
-  Building2,
+  Download,
+  FileCode2,
+  Star,
   AlertCircle,
-  Download
+  CheckCircle2,
+  Square,
+  ChevronLeft,
+  ChevronRight,
+  Sun,
+  Moon,
+  Menu,
+  X,
+  MessageSquarePlus,
+  BookOpen,
+  ScrollText,
+  Languages,
+  Stamp,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import Markdown from 'react-markdown';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import { toCanvas } from 'html-to-image';
-import { jsPDF } from 'jspdf';
+import {
+  AnalysisDepth,
+  AppLanguage,
+  CompanyInfo,
+  ConvictionLevel,
+  ExecutiveSynthesis,
+  FollowUpMessage,
+  ReadingMode,
+  ReportChapterState,
+  SavedResearchRecord,
+  WorkspaceView,
+} from './types/research';
+import {
+  ANALYSIS_STEPS,
+  CONVICTION_LABELS,
+  PRESET_COMPANIES,
+} from './constants/analysisSteps';
+import { marketLabel, UI_COPY } from './constants/i18n';
+import {
+  buildRecordId,
+  deleteResearchRecord,
+  loadActiveRecordId,
+  loadLanguagePreference,
+  loadLibrary,
+  loadThemePreference,
+  loadWatermarkPreference,
+  saveActiveRecordId,
+  saveLanguagePreference,
+  saveThemePreference,
+  saveWatermarkPreference,
+  upsertResearchRecord,
+} from './utils/storage';
+import { analyzeDimension, synthesizeExecutiveBrief } from './utils/api';
+import {
+  downloadMarkdownFile,
+  exportElementToPDF,
+  WATERMARK_TEXT,
+} from './utils/exportReport';
+import { MarkdownRenderer } from './components/MarkdownRenderer';
+import { RadarProfileChart } from './components/RadarProfileChart';
+import { ResearchArchiveView } from './components/ResearchArchiveView';
+import { CompareView } from './components/CompareView';
+import { FollowUpPanel } from './components/FollowUpPanel';
+import { ReportWatermarkOverlay } from './components/ReportWatermarkOverlay';
 
-// Utility for tailwind classes
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+function createEmptyChapters(): ReportChapterState[] {
+  return ANALYSIS_STEPS.map((s) => ({
+    id: s.id,
+    content: '',
+    status: 'idle',
+  }));
 }
-
-// --- Types ---
-
-interface CompanyInfo {
-  name: string;
-  ticker: string;
-  industry: string;
-}
-
-interface AnalysisReport {
-  id: number;
-  title: string;
-  icon: React.ReactNode;
-  content: string;
-  status: 'idle' | 'loading' | 'completed' | 'error';
-}
-
-// --- Constants ---
-
-const ANALYSIS_STEPS = [
-  { id: 1, title: "业务理解 (Business Understanding)", icon: <Building2 className="w-5 h-5" />, prompt: (c: CompanyInfo) => `用简单术语解释公司业务、解决的问题、付费者和选择原因。避免财务术语。公司：${c.name} (${c.ticker})，行业：${c.industry}` },
-  { id: 2, title: "收入分解 (Revenue Breakdown)", icon: <PieChart className="w-5 h-5" />, prompt: (c: CompanyInfo) => `分解收入流，哪些增长哪些放缓，依赖度。公司：${c.name} (${c.ticker})` },
-  { id: 3, title: "行业背景 (Industry Background)", icon: <Globe className="w-5 h-5" />, prompt: (c: CompanyInfo) => `解释行业，市场状态，长期趋势利弊。公司：${c.name} (${c.ticker})，行业：${c.industry}` },
-  { id: 4, title: "竞争格局 (Competitive Landscape)", icon: <Users className="w-5 h-5" />, prompt: (c: CompanyInfo) => `列竞争对手，比较定价、产品、规模、护城河，突出赢输。公司：${c.name} (${c.ticker})` },
-  { id: 5, title: "财务质量 (Financial Quality)", icon: <BarChart3 className="w-5 h-5" />, prompt: (c: CompanyInfo) => `分析收入增长一致性、利润率、债务、现金流、资本配置。公司：${c.name} (${c.ticker})` },
-  { id: 6, title: "风险与下跌 (Risks & Downside)", icon: <ShieldAlert className="w-5 h-5" />, prompt: (c: CompanyInfo) => `识别最大风险：业务、财务、监管、永久损害。公司：${c.name} (${c.ticker})` },
-  { id: 7, title: "管理层与执行 (Management & Execution)", icon: <Briefcase className="w-5 h-5" />, prompt: (c: CompanyInfo) => `评估团队历史表现和决策对股东利益。公司：${c.name} (${c.ticker})` },
-  { id: 8, title: "牛熊情景 (Bull/Bear Scenarios)", icon: <LineChart className="w-5 h-5" />, prompt: (c: CompanyInfo) => `列未来3-5年牛熊案，关注基本面。股票：${c.name} (${c.ticker})` },
-  { id: 9, title: "估值思考 (Valuation Thoughts)", icon: <Scale className="w-5 h-5" />, prompt: (c: CompanyInfo) => `解释估值看法，关键假设和证明高低估值。公司：${c.name} (${c.ticker})` },
-  { id: 10, title: "长期论文 (Long-term Thesis)", icon: <FileText className="w-5 h-5" />, prompt: (c: CompanyInfo) => `形成长期投资论点，为什么好、必须成功什么、错的迹象。公司：${c.name} (${c.ticker})` },
-];
-
-// --- Main Component ---
 
 export default function App() {
-  const [company, setCompany] = useState<CompanyInfo>({ name: '', ticker: '', industry: '' });
-  const [reports, setReports] = useState<AnalysisReport[]>(
-    ANALYSIS_STEPS.map(step => ({ ...step, content: '', status: 'idle' }))
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => loadThemePreference());
+  const [lang, setLang] = useState<AppLanguage>(() => loadLanguagePreference());
+  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(() =>
+    loadWatermarkPreference()
   );
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeReportId, setActiveReportId] = useState<number | null>(null);
+  const [view, setView] = useState<WorkspaceView>('research');
+  const [library, setLibrary] = useState<SavedResearchRecord[]>(() => loadLibrary());
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // Active research state
+  const [activeRecordId, setActiveRecordId] = useState<string | null>(() => loadActiveRecordId());
+  const [company, setCompany] = useState<CompanyInfo>({ name: '', ticker: '', industry: '' });
+  const [depth, setDepth] = useState<AnalysisDepth>('standard');
+  const [chapters, setChapters] = useState<ReportChapterState[]>(createEmptyChapters);
+  const [synthesis, setSynthesis] = useState<ExecutiveSynthesis | null>(null);
+  const [conviction, setConviction] = useState<ConvictionLevel>('undecided');
+  const [starred, setStarred] = useState<boolean>(false);
+  const [notes, setNotes] = useState<string>('');
+  const [followUps, setFollowUps] = useState<FollowUpMessage[]>([]);
+  const [createdAt, setCreatedAt] = useState<number>(Date.now());
+
+  // Execution & UI state
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [synthesisError, setSynthesisError] = useState<string | null>(null);
+  const [readingMode, setReadingMode] = useState<ReadingMode>('scroll');
+  const [focusedChapterId, setFocusedChapterId] = useState<number>(1);
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [marketFilter, setMarketFilter] = useState<'ALL' | 'HK' | 'US' | 'A'>('ALL');
 
-  const exportToPDF = async () => {
-    const element = document.getElementById('report-content');
-    if (!element) return;
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const t = UI_COPY[lang];
 
-    setIsExporting(true);
-    setExportError(null);
+  const hasStartedReport = useMemo(
+    () => isAnalyzing || chapters.some((c) => c.status !== 'idle'),
+    [isAnalyzing, chapters]
+  );
 
-    try {
-      // Use html-to-image to rasterize DOM. Natively supports modern Tailwind v4 OKLCH colors, typography, SVGs.
-      const canvas = await toCanvas(element, {
-        backgroundColor: '#ffffff',
-        pixelRatio: 2,
-        skipFonts: true,
-        filter: (node) => {
-          if (node instanceof HTMLElement) {
-            // Exclude action buttons (like retry single step) from the PDF
-            if (node.tagName === 'BUTTON') return false;
-            if (node.classList?.contains('no-export')) return false;
-          }
-          return true;
-        }
-      });
+  // Sync dark mode class on <html>
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    saveThemePreference(theme);
+  }, [theme]);
 
-      // Generate multi-page PDF using jsPDF
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 12; // 12mm page margin
-      const contentWidth = pageWidth - margin * 2; // 186mm
-      const contentHeight = pageHeight - margin * 2; // 273mm
+  // Persist language & dynamic SEO metadata
+  useEffect(() => {
+    saveLanguagePreference(lang);
+    document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
 
-      // Height of one A4 printable area in canvas pixel coordinate space
-      const pageCanvasHeight = Math.floor(canvas.width * (contentHeight / contentWidth));
+    const pageTitle =
+      view === 'research' && hasStartedReport && company.name
+        ? `${company.name} (${company.ticker}) – ${
+            lang === 'en' ? 'Equity Research Report | StockInsight AI' : '深度投研报告 | StockInsight AI'
+          }`
+        : t.seoTitle;
 
-      let currentY = 0;
-      let pageNumber = 0;
+    document.title = pageTitle;
 
-      while (currentY < canvas.height) {
-        if (pageNumber > 0) {
-          pdf.addPage();
-        }
+    const desc = t.seoDescription;
+    const setMeta = (selector: string, attr: string, value: string) => {
+      const el = document.querySelector(selector);
+      if (el) el.setAttribute(attr, value);
+    };
 
-        const remainingCanvasHeight = canvas.height - currentY;
-        const sliceHeight = Math.min(pageCanvasHeight, remainingCanvasHeight);
+    setMeta('meta[name="description"]', 'content', desc);
+    setMeta('meta[property="og:title"]', 'content', pageTitle);
+    setMeta('meta[property="og:description"]', 'content', desc);
+    setMeta('meta[name="twitter:title"]', 'content', pageTitle);
+    setMeta('meta[name="twitter:description"]', 'content', desc);
 
-        // Offscreen canvas for this single page slice to guarantee clean layout and borders
-        const pageCanvas = document.createElement('canvas');
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = pageCanvasHeight;
-        const ctx = pageCanvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-          ctx.drawImage(
-            canvas,
-            0, currentY, canvas.width, sliceHeight,
-            0, 0, canvas.width, sliceHeight
-          );
-        }
+    const currentUrl =
+      typeof window !== 'undefined'
+        ? window.location.origin + window.location.pathname
+        : 'https://stock.meloon.top/';
+    setMeta('meta[property="og:url"]', 'content', currentUrl);
+    setMeta('meta[name="twitter:url"]', 'content', currentUrl);
+    setMeta('link[rel="canonical"]', 'href', currentUrl);
+  }, [lang, view, hasStartedReport, company.name, company.ticker, t.seoTitle, t.seoDescription]);
 
-        const sliceImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
-        const sliceImgHeightMm = (sliceHeight * contentWidth) / canvas.width;
+  // Persist watermark toggle
+  useEffect(() => {
+    saveWatermarkPreference(watermarkEnabled);
+  }, [watermarkEnabled]);
 
-        pdf.addImage(sliceImgData, 'JPEG', margin, margin, contentWidth, sliceImgHeightMm);
-
-        currentY += sliceHeight;
-        pageNumber++;
+  // Restore last active record on initial load
+  useEffect(() => {
+    if (activeRecordId) {
+      const found = library.find((r) => r.id === activeRecordId);
+      if (found) {
+        setCompany(found.company);
+        setDepth(found.depth);
+        if (found.lang) setLang(found.lang);
+        setChapters(found.chapters);
+        setSynthesis(found.synthesis);
+        setConviction(found.conviction);
+        setStarred(found.starred);
+        setNotes(found.notes);
+        setFollowUps(found.followUps || []);
+        setCreatedAt(found.createdAt);
       }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-      const safeName = (company.name || '公司').replace(/[/\\?%*:|"<>]/g, '_');
-      const safeTicker = (company.ticker || '代码').replace(/[/\\?%*:|"<>]/g, '_');
-      const filename = `${safeName}_${safeTicker}_投资分析报告.pdf`;
-      pdf.save(filename);
+  const completedCount = useMemo(
+    () => chapters.filter((c) => c.status === 'completed').length,
+    [chapters]
+  );
+
+  const reportContextSummary = useMemo(
+    () =>
+      chapters
+        .filter((c) => c.status === 'completed' && c.content)
+        .map((c) => {
+          const def = ANALYSIS_STEPS.find((s) => s.id === c.id);
+          return `[${def?.shortTitle[lang]}]\n${c.content.slice(0, 600)}`;
+        })
+        .join('\n\n'),
+    [chapters, lang]
+  );
+
+  const persistCurrentRecord = (overrides?: Partial<SavedResearchRecord>) => {
+    const targetCompany = overrides?.company || company;
+    if (!targetCompany.name.trim() || !targetCompany.ticker.trim()) return;
+
+    const id = overrides?.id || buildRecordId(targetCompany);
+    const record: SavedResearchRecord = {
+      id,
+      company: targetCompany,
+      depth: overrides?.depth ?? depth,
+      lang: overrides?.lang ?? lang,
+      chapters: overrides?.chapters ?? chapters,
+      synthesis: overrides?.synthesis !== undefined ? overrides.synthesis : synthesis,
+      conviction: overrides?.conviction ?? conviction,
+      starred: overrides?.starred ?? starred,
+      notes: overrides?.notes ?? notes,
+      followUps: overrides?.followUps ?? followUps,
+      createdAt: overrides?.createdAt ?? createdAt,
+      updatedAt: Date.now(),
+    };
+
+    const updated = upsertResearchRecord(record);
+    setLibrary(updated);
+    setActiveRecordId(id);
+    saveActiveRecordId(id);
+  };
+
+  const resetToNewResearch = () => {
+    if (isAnalyzing) {
+      abortControllerRef.current?.abort();
+      setIsAnalyzing(false);
+    }
+    setActiveRecordId(null);
+    saveActiveRecordId(null);
+    setCompany({ name: '', ticker: '', industry: '' });
+    setChapters(createEmptyChapters());
+    setSynthesis(null);
+    setSynthesisError(null);
+    setConviction('undecided');
+    setStarred(false);
+    setNotes('');
+    setFollowUps([]);
+    setFocusedChapterId(1);
+    setExportError(null);
+    setView('research');
+  };
+
+  const openSavedRecord = (record: SavedResearchRecord) => {
+    if (isAnalyzing) {
+      abortControllerRef.current?.abort();
+      setIsAnalyzing(false);
+    }
+    setActiveRecordId(record.id);
+    saveActiveRecordId(record.id);
+    setCompany(record.company);
+    setDepth(record.depth);
+    if (record.lang) setLang(record.lang);
+    setChapters(record.chapters);
+    setSynthesis(record.synthesis);
+    setSynthesisError(null);
+    setConviction(record.conviction);
+    setStarred(record.starred);
+    setNotes(record.notes);
+    setFollowUps(record.followUps || []);
+    setCreatedAt(record.createdAt);
+    setFocusedChapterId(1);
+    setView('research');
+    setMobileSidebarOpen(false);
+  };
+
+  const generateSynthesis = async (
+    targetCompany: CompanyInfo,
+    targetChapters: ReportChapterState[],
+    targetLang: AppLanguage,
+    signal?: AbortSignal
+  ) => {
+    const context = targetChapters
+      .filter((c) => c.status === 'completed' && c.content)
+      .map((c) => {
+        const def = ANALYSIS_STEPS.find((s) => s.id === c.id);
+        return `## ${def?.shortTitle[targetLang]}\n${c.content.slice(0, 650)}`;
+      })
+      .join('\n\n');
+
+    setIsSynthesizing(true);
+    setSynthesisError(null);
+    try {
+      const result = await synthesizeExecutiveBrief(targetCompany, context, targetLang, signal);
+      setSynthesis(result);
+      persistCurrentRecord({
+        company: targetCompany,
+        chapters: targetChapters,
+        synthesis: result,
+        lang: targetLang,
+      });
     } catch (err: any) {
-      console.error('PDF export error:', err);
-      setExportError(err?.message || '生成 PDF 失败，请稍后重试');
+      if (err?.name !== 'AbortError') {
+        setSynthesisError(err?.message || 'Synthesis generation failed');
+      }
     } finally {
-      setIsExporting(false);
+      setIsSynthesizing(false);
     }
   };
 
-  const executeGenerate = async (prompt: string, stepId: number, retries = 3, delay = 1500) => {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      try {
-        const res = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, stepId })
-        });
+  const runAnalysis = async (
+    overrideCompany?: CompanyInfo,
+    overrideDepth?: AnalysisDepth,
+    overrideLang?: AppLanguage
+  ) => {
+    const targetCompany = overrideCompany || company;
+    const targetDepth = overrideDepth || depth;
+    const targetLang = overrideLang || lang;
+    if (!targetCompany.name.trim() || !targetCompany.ticker.trim()) return;
 
-        if (!res.ok) {
-          let errorText = '';
+    if (overrideCompany) setCompany(overrideCompany);
+    if (overrideDepth) setDepth(overrideDepth);
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const now = Date.now();
+    const initialChapters = createEmptyChapters();
+    setView('research');
+    setIsAnalyzing(true);
+    setChapters(initialChapters);
+    setSynthesis(null);
+    setSynthesisError(null);
+    setExportError(null);
+    setCreatedAt(now);
+    setFocusedChapterId(1);
+
+    let workingChapters = [...initialChapters];
+    const recordId = buildRecordId(targetCompany);
+    const existing = library.find((r) => r.id === recordId);
+
+    const baseStarred = existing?.starred ?? false;
+    const baseConviction = existing?.conviction ?? 'undecided';
+    const baseNotes = existing?.notes ?? '';
+    const baseFollowUps = existing?.followUps ?? [];
+
+    setStarred(baseStarred);
+    setConviction(baseConviction);
+    setNotes(baseNotes);
+    setFollowUps(baseFollowUps);
+
+    const batchSize = 2;
+    for (let i = 0; i < ANALYSIS_STEPS.length; i += batchSize) {
+      if (controller.signal.aborted) break;
+
+      const batch = ANALYSIS_STEPS.slice(i, i + batchSize);
+      const batchIds = batch.map((b) => b.id);
+
+      workingChapters = workingChapters.map((ch) =>
+        batchIds.includes(ch.id) ? { ...ch, status: 'loading' } : ch
+      );
+      setChapters(workingChapters);
+
+      await Promise.all(
+        batch.map(async (step) => {
           try {
-            const errJson = await res.json();
-            errorText = errJson.error || errJson.message || `HTTP ${res.status}`;
-          } catch {
-            if (res.status === 405) {
-              errorText = `HTTP 405 (Method Not Allowed): 当前站点部署为纯静态托管，后端 /api/analyze 未生效。若部署在 Cloudflare Pages，请确保包含 functions/ 目录并在平台环境变量中配置 GEMINI_API_KEY。`;
-            } else if (res.status === 502 || res.status === 503 || res.status === 504) {
-              errorText = `后端服务正在建立连接 (HTTP ${res.status})，即将自动重试`;
+            const text = await analyzeDimension(
+              step.prompt(targetCompany, targetLang),
+              step.id,
+              targetDepth,
+              targetLang,
+              controller.signal
+            );
+            workingChapters = workingChapters.map((ch) =>
+              ch.id === step.id
+                ? { ...ch, content: text, status: 'completed', updatedAt: Date.now() }
+                : ch
+            );
+          } catch (err: any) {
+            if (err?.name === 'AbortError') {
+              workingChapters = workingChapters.map((ch) =>
+                ch.id === step.id && ch.status === 'loading'
+                  ? { ...ch, status: 'idle' }
+                  : ch
+              );
             } else {
-              errorText = `HTTP ${res.status}: ${res.statusText || '请求异常'}`;
+              workingChapters = workingChapters.map((ch) =>
+                ch.id === step.id
+                  ? {
+                      ...ch,
+                      content:
+                        err?.message ||
+                        (targetLang === 'en'
+                          ? 'Generation failed. Click Retry to regenerate this section.'
+                          : '该维度生成失败，请点击单章重试。'),
+                      status: 'error',
+                    }
+                  : ch
+              );
             }
           }
-          throw new Error(errorText);
-        }
+          setChapters([...workingChapters]);
+        })
+      );
 
-        const data = await res.json();
-        return data.text || "未能生成分析内容。";
-      } catch (error: any) {
-        const errMessage = error?.message || '';
-        const isTransient = 
-          !errMessage.includes('405') && (
-            errMessage.includes('429') || 
-            errMessage.includes('503') || 
-            errMessage.includes('502') || 
-            errMessage.includes('504') || 
-            errMessage.includes('正在建立连接') ||
-            errMessage.includes('RESOURCE_EXHAUSTED') || 
-            errMessage.includes('UNAVAILABLE') ||
-            errMessage.includes('Failed to fetch') ||
-            errMessage.includes('NetworkError') ||
-            errMessage.includes('network')
-          );
+      persistCurrentRecord({
+        id: recordId,
+        company: targetCompany,
+        depth: targetDepth,
+        lang: targetLang,
+        chapters: workingChapters,
+        synthesis: null,
+        conviction: baseConviction,
+        starred: baseStarred,
+        notes: baseNotes,
+        followUps: baseFollowUps,
+        createdAt: now,
+      });
 
-        if (isTransient && attempt < retries) {
-          const backoff = delay * Math.pow(2, attempt);
-          console.warn(`第 ${stepId} 步暂态重试 (第 ${attempt + 1}/${retries} 次)，等待 ${backoff}ms...`);
-          await new Promise(resolve => setTimeout(resolve, backoff));
-          continue;
-        }
-        throw error;
-      }
-    }
-    return "分析失败：重试次数过多，请稍后再试。";
-  };
-
-  const retrySingleReport = async (reportId: number) => {
-    if (isAnalyzing || !company.name || !company.ticker) return;
-    const step = ANALYSIS_STEPS.find(s => s.id === reportId);
-    if (!step) return;
-
-    setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'loading' } : r));
-    setActiveReportId(reportId);
-
-    try {
-      const text = await executeGenerate(step.prompt(company), step.id);
-      setReports(prev => prev.map(r => r.id === reportId ? { ...r, content: text, status: 'completed' } : r));
-    } catch (error: any) {
-      console.error(`Error retrying step ${reportId}:`, error);
-      let errorMsg = error?.message || "分析过程中发生错误，请稍后重试。";
-      if (errorMsg.includes('429')) {
-        errorMsg = "API 请求频率过高（429 错误）。系统已尝试重试，请稍后再试。";
-      } else if (errorMsg.includes('405')) {
-        errorMsg = "服务正在就绪中，请稍后再次点击重试。";
-      }
-      setReports(prev => prev.map(r => r.id === reportId ? { ...r, content: errorMsg, status: 'error' } : r));
-    }
-  };
-
-  const runAnalysis = async () => {
-    if (!company.name || !company.ticker) return;
-
-    setIsAnalyzing(true);
-    const newReports = reports.map(r => ({ ...r, content: '', status: 'idle' as const }));
-    setReports(newReports);
-
-    for (let i = 0; i < ANALYSIS_STEPS.length; i++) {
-      const step = ANALYSIS_STEPS[i];
-      
-      setReports(prev => prev.map(r => r.id === step.id ? { ...r, status: 'loading' } : r));
-      setActiveReportId(step.id);
-
-      try {
-        const text = await executeGenerate(step.prompt(company), step.id);
-        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: text, status: 'completed' } : r));
-        
-        // Add a small delay between steps to avoid hitting rate limits too quickly
-        if (i < ANALYSIS_STEPS.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 800));
-        }
-      } catch (error: any) {
-        console.error(`Error in step ${step.id}:`, error);
-        let errorMsg = error?.message || "分析过程中发生错误，请检查 API Key 或网络连接。";
-        if (error?.message?.includes('429')) {
-          errorMsg = "API 请求频率过高（429 错误）。系统已尝试重试，但仍未成功。请稍后再试。";
-        } else if (error?.message?.includes('405')) {
-          errorMsg = "服务正在就绪中，请点击下方重试按钮。";
-        }
-        setReports(prev => prev.map(r => r.id === step.id ? { ...r, content: errorMsg, status: 'error' } : r));
+      if (i + batchSize < ANALYSIS_STEPS.length && !controller.signal.aborted) {
+        await new Promise((r) => setTimeout(r, 400));
       }
     }
 
     setIsAnalyzing(false);
-    setActiveReportId(null);
-  };
 
-  const scrollToSection = (id: number) => {
-    const element = document.getElementById(`report-${id}`);
-    if (element) {
-      const headerOffset = 100;
-      const elementPosition = element.getBoundingClientRect().top;
-      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
-
-      window.scrollTo({
-        top: offsetPosition,
-        behavior: "smooth"
-      });
+    const completed = workingChapters.filter((c) => c.status === 'completed').length;
+    if (!controller.signal.aborted && completed >= 3) {
+      await generateSynthesis(targetCompany, workingChapters, targetLang, controller.signal);
     }
   };
 
+  const stopAnalysis = () => {
+    abortControllerRef.current?.abort();
+    setIsAnalyzing(false);
+  };
+
+  const retrySingleChapter = async (stepId: number) => {
+    if (isAnalyzing || !company.name.trim() || !company.ticker.trim()) return;
+    const step = ANALYSIS_STEPS.find((s) => s.id === stepId);
+    if (!step) return;
+
+    const loadingChapters = chapters.map((ch) =>
+      ch.id === stepId ? { ...ch, status: 'loading' as const } : ch
+    );
+    setChapters(loadingChapters);
+
+    try {
+      const text = await analyzeDimension(step.prompt(company, lang), step.id, depth, lang);
+      const nextChapters = loadingChapters.map((ch) =>
+        ch.id === stepId
+          ? { ...ch, content: text, status: 'completed' as const, updatedAt: Date.now() }
+          : ch
+      );
+      setChapters(nextChapters);
+      persistCurrentRecord({ chapters: nextChapters });
+    } catch (err: any) {
+      const errChapters = loadingChapters.map((ch) =>
+        ch.id === stepId
+          ? {
+              ...ch,
+              content:
+                err?.message ||
+                (lang === 'en' ? 'Retry failed.' : '重试失败，请检查网络或接口配置。'),
+              status: 'error' as const,
+            }
+          : ch
+      );
+      setChapters(errChapters);
+    }
+  };
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    setExportError(null);
+    const prevMode = readingMode;
+    if (prevMode === 'chapter') {
+      setReadingMode('scroll');
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
+    try {
+      await exportElementToPDF('report-content', company, lang, watermarkEnabled);
+    } catch (err: any) {
+      setExportError(
+        err?.message || (lang === 'en' ? 'Failed to export PDF' : '导出报告失败，请稍后重试')
+      );
+    } finally {
+      if (prevMode === 'chapter') {
+        setReadingMode('chapter');
+      }
+      setIsExporting(false);
+    }
+  };
+
+  const handleSelectChapter = (id: number) => {
+    setFocusedChapterId(id);
+    setMobileSidebarOpen(false);
+    if (readingMode === 'scroll') {
+      const el = document.getElementById(`report-${id}`);
+      if (el) {
+        const y = el.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+      }
+    }
+  };
+
+  const handleToggleStar = (targetId?: string) => {
+    if (targetId && targetId !== activeRecordId) {
+      const updated = library.map((rec) =>
+        rec.id === targetId ? { ...rec, starred: !rec.starred, updatedAt: Date.now() } : rec
+      );
+      setLibrary(updated);
+      const item = updated.find((r) => r.id === targetId);
+      if (item) upsertResearchRecord(item);
+      return;
+    }
+    const nextStarred = !starred;
+    setStarred(nextStarred);
+    persistCurrentRecord({ starred: nextStarred });
+  };
+
+  const handleConvictionChange = (val: ConvictionLevel) => {
+    setConviction(val);
+    persistCurrentRecord({ conviction: val });
+  };
+
+  const handleNotesChange = (val: string) => {
+    setNotes(val);
+    persistCurrentRecord({ notes: val });
+  };
+
+  const handleAddFollowUps = (newMsgs: FollowUpMessage[]) => {
+    const next = [...followUps, ...newMsgs];
+    setFollowUps(next);
+    persistCurrentRecord({ followUps: next });
+  };
+
+  const handleDeleteRecord = (id: string) => {
+    const updated = deleteResearchRecord(id);
+    setLibrary(updated);
+    if (id === activeRecordId) {
+      resetToNewResearch();
+    }
+  };
+
+  const filteredPresets = useMemo(
+    () =>
+      marketFilter === 'ALL'
+        ? PRESET_COMPANIES
+        : PRESET_COMPANIES.filter((p) => p.market === marketFilter),
+    [marketFilter]
+  );
+
+  const visibleChapters = useMemo(() => {
+    if (readingMode === 'chapter') {
+      return chapters.filter((c) => c.id === focusedChapterId);
+    }
+    return chapters.filter((c) => c.status !== 'idle');
+  }, [chapters, readingMode, focusedChapterId]);
+
+  const starredRecords = useMemo(() => library.filter((r) => r.starred), [library]);
+
   return (
-    <div className="min-h-screen bg-[#F5F5F5] text-[#1A1A1A] font-sans selection:bg-emerald-100">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-black/5 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <a href="http://stock.meloon.top" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
-                <TrendingUp className="text-white w-5 h-5" />
-              </div>
-              <h1 className="text-xl font-semibold tracking-tight">StockInsight AI</h1>
-            </a>
-          </div>
-          <div className="text-xs font-mono text-black/40 uppercase tracking-widest">
-            Professional Grade Analysis
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 dark:bg-[#0B1120] dark:text-slate-100">
+      {/* Top Bar Contract: 3 zones separated by gap-8 */}
+      <header className="sticky top-0 z-40 h-16 bg-white/90 dark:bg-[#0B1120]/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6">
+        <div className="max-w-[1440px] mx-auto h-full flex items-center justify-between gap-8">
+          {/* Zone 1: Single-element Brand Wordmark */}
+          <button
+            onClick={() => setView('research')}
+            className="font-display text-lg font-bold tracking-tight text-slate-900 dark:text-slate-50 whitespace-nowrap shrink-0 hover:opacity-80 transition-opacity"
+          >
+            StockInsight
+          </button>
+
+          {/* Zone 2: Clean single-line text nav links */}
+          <nav className="flex items-center gap-6 sm:gap-8 text-sm font-medium">
+            <button
+              onClick={() => setView('research')}
+              className={`py-5 border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+                view === 'research'
+                  ? 'border-teal-700 dark:border-teal-400 text-slate-900 dark:text-slate-50 font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              {t.navResearch}
+            </button>
+            <button
+              onClick={() => setView('archive')}
+              className={`py-5 border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+                view === 'archive'
+                  ? 'border-teal-700 dark:border-teal-400 text-slate-900 dark:text-slate-50 font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              {t.navArchive}
+            </button>
+            <button
+              onClick={() => setView('compare')}
+              className={`py-5 border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+                view === 'compare'
+                  ? 'border-teal-700 dark:border-teal-400 text-slate-900 dark:text-slate-50 font-semibold'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
+            >
+              {t.navCompare}
+            </button>
+          </nav>
+
+          {/* Zone 3: 1 Primary CTA */}
+          <div className="flex items-center shrink-0">
+            <button
+              onClick={resetToNewResearch}
+              className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0"
+            >
+              {t.newAnalysis}
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Input & Status */}
-        <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto pr-2 custom-scrollbar">
-          <section className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-black/40 mb-4 flex items-center gap-2">
-              <Search className="w-4 h-4" />
-              公司信息输入
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-black/60 mb-1">公司名称</label>
-                <input 
-                  type="text"
-                  placeholder="例如: 腾讯控股"
-                  className="w-full px-4 py-2 bg-[#F9F9F9] border border-black/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
-                  value={company.name}
-                  onChange={(e) => setCompany(prev => ({ ...prev, name: e.target.value }))}
-                />
+      {/* Main Workspace Frame */}
+      <div className="flex-1 max-w-[1440px] w-full mx-auto flex items-start relative">
+        {/* Desktop Sidebar & Mobile Drawer (Visible in Research view) */}
+        {view === 'research' && (
+          <>
+            {mobileSidebarOpen && (
+              <div
+                onClick={() => setMobileSidebarOpen(false)}
+                className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden"
+              />
+            )}
+            <aside
+              className={`fixed lg:sticky top-0 lg:top-16 left-0 z-50 lg:z-20 w-72 shrink-0 h-screen lg:h-[calc(100vh-4rem)] bg-white dark:bg-[#0F172A] lg:bg-transparent lg:dark:bg-transparent border-r border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200 ${
+                mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+              }`}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-800 lg:hidden">
+                <span className="font-display font-bold text-sm">{t.mobileOutlineBtn}</span>
+                <button
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className="p-1.5 text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
+                  aria-label="Close sidebar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-black/60 mb-1">股票代码</label>
-                <input 
-                  type="text"
-                  placeholder="例如: 0700.HK"
-                  className="w-full px-4 py-2 bg-[#F9F9F9] border border-black/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
-                  value={company.ticker}
-                  onChange={(e) => setCompany(prev => ({ ...prev, ticker: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-black/60 mb-1">所属行业</label>
-                <input 
-                  type="text"
-                  placeholder="例如: 互联网/社交媒体"
-                  className="w-full px-4 py-2 bg-[#F9F9F9] border border-black/5 rounded-xl focus:outline-none focus:ring-2 focus:ring-black/5 transition-all"
-                  value={company.industry}
-                  onChange={(e) => setCompany(prev => ({ ...prev, industry: e.target.value }))}
-                />
-              </div>
-              <button 
-                onClick={runAnalysis}
-                disabled={isAnalyzing || !company.name || !company.ticker}
-                className={cn(
-                  "w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all",
-                  isAnalyzing || !company.name || !company.ticker
-                    ? "bg-black/5 text-black/20 cursor-not-allowed"
-                    : "bg-black text-white hover:bg-black/90 active:scale-[0.98]"
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-7">
+                {/* 10-Dimension Chapter Outline */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                      {t.outlineTitle}
+                    </h2>
+                    {hasStartedReport && (
+                      <span className="font-mono text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                        {completedCount}/10
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {ANALYSIS_STEPS.map((step) => {
+                      const ch = chapters.find((c) => c.id === step.id);
+                      const status = ch?.status || 'idle';
+                      const isFocused = focusedChapterId === step.id && hasStartedReport;
+
+                      return (
+                        <button
+                          key={step.id}
+                          onClick={() => {
+                            if (status !== 'idle' || readingMode === 'chapter') {
+                              handleSelectChapter(step.id);
+                            }
+                          }}
+                          disabled={status === 'idle' && !hasStartedReport}
+                          className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-colors ${
+                            isFocused
+                              ? 'bg-teal-50 dark:bg-teal-950/50 text-teal-800 dark:text-teal-300 font-medium'
+                              : status === 'idle' && !hasStartedReport
+                              ? 'text-slate-400 dark:text-slate-600 cursor-default'
+                              : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="font-mono text-xs tabular-nums text-slate-400 w-5 shrink-0">
+                              {String(step.id).padStart(2, '0')}
+                            </span>
+                            <span className="truncate">{step.shortTitle[lang]}</span>
+                          </div>
+                          <span className="shrink-0">
+                            {status === 'loading' && (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-600 dark:text-teal-400" />
+                            )}
+                            {status === 'completed' && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            )}
+                            {status === 'error' && (
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Starred & Recent Watchlist */}
+                {library.length > 0 && (
+                  <div className="pt-5 border-t border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {starredRecords.length > 0 ? t.starredTitle : t.recentTitle}
+                      </h2>
+                      <button
+                        onClick={() => setView('archive')}
+                        className="text-xs text-teal-700 dark:text-teal-400 hover:underline"
+                      >
+                        {t.viewAll} ({library.length})
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      {(starredRecords.length > 0 ? starredRecords : library)
+                        .slice(0, 6)
+                        .map((rec) => {
+                          const isCurrent = rec.id === activeRecordId && hasStartedReport;
+                          return (
+                            <button
+                              key={rec.id}
+                              onClick={() => openSavedRecord(rec)}
+                              className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                                isCurrent
+                                  ? 'bg-slate-200/70 dark:bg-slate-800 text-slate-900 dark:text-slate-50 font-medium'
+                                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm truncate">{rec.company.name}</div>
+                                <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                                  {rec.company.ticker}
+                                </div>
+                              </div>
+                              {rec.starred && (
+                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
                 )}
+              </div>
+
+              {/* Sidebar Footer: Language & Theme Preferences */}
+              <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Languages className="w-3.5 h-3.5" />
+                    {t.langLabel}
+                  </span>
+                  <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <button
+                      onClick={() => setLang('zh')}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                        lang === 'zh'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      中文
+                    </button>
+                    <button
+                      onClick={() => setLang('en')}
+                      className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                        lang === 'en'
+                          ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      EN
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">{t.themeLabel}</span>
+                  <button
+                    onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    {theme === 'light' ? (
+                      <>
+                        <Moon className="w-3.5 h-3.5" />
+                        {t.themeDark}
+                      </>
+                    ) : (
+                      <>
+                        <Sun className="w-3.5 h-3.5" />
+                        {t.themeLight}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </aside>
+          </>
+        )}
+
+        {/* Main Content Viewport */}
+        <main className="flex-1 min-w-0 px-4 sm:px-8 py-6 sm:py-8">
+          {/* Sub-Toolbar for Mobile or Views without Sidebar */}
+          <div
+            className={`flex items-center justify-between gap-3 mb-5 ${
+              view === 'research' ? 'lg:hidden' : ''
+            }`}
+          >
+            {view === 'research' ? (
+              <button
+                onClick={() => setMobileSidebarOpen(true)}
+                className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
               >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    正在深度分析...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-4 h-4" />
-                    开始 10 点深度分析
-                  </>
-                )}
+                <Menu className="w-4 h-4" />
+                {t.mobileOutlineBtn} ({completedCount}/10)
+              </button>
+            ) : (
+              <div />
+            )}
+
+            <div className="flex items-center gap-2">
+              <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                <button
+                  onClick={() => setLang('zh')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    lang === 'zh'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  中文
+                </button>
+                <button
+                  onClick={() => setLang('en')}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    lang === 'en'
+                      ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  EN
+                </button>
+              </div>
+              <button
+                onClick={() => setTheme((prev) => (prev === 'light' ? 'dark' : 'light'))}
+                className="p-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300"
+                aria-label="Toggle Theme"
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
               </button>
             </div>
-          </section>
+          </div>
 
-          <section className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-black/40 mb-4">分析维度</h2>
-            <div className="space-y-3">
-              {reports.map((report) => (
-                <div 
-                  key={report.id}
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer",
-                    activeReportId === report.id ? "bg-black/5 border-black/10" : "bg-transparent border-transparent",
-                    report.status === 'completed' ? "text-emerald-600" : ""
-                  )}
-                  onClick={() => {
-                    if (report.status !== 'idle') {
-                      setActiveReportId(report.id);
-                      scrollToSection(report.id);
-                    }
+          {view === 'archive' && (
+            <ResearchArchiveView
+              records={library}
+              lang={lang}
+              onOpenRecord={openSavedRecord}
+              onRefreshRecord={(rec) => runAnalysis(rec.company, rec.depth, lang)}
+              onToggleStar={(id) => handleToggleStar(id)}
+              onDeleteRecord={handleDeleteRecord}
+              onStartNew={resetToNewResearch}
+            />
+          )}
+
+          {view === 'compare' && <CompareView records={library} lang={lang} />}
+
+          {view === 'research' && !hasStartedReport && (
+            <div className="max-w-4xl mx-auto space-y-10">
+              {/* Launch Hero & Research Input */}
+              <section className="space-y-6">
+                <div className="space-y-2.5">
+                  <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50 max-w-2xl">
+                    {t.heroTitle}
+                  </h1>
+                  <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 max-w-2xl leading-relaxed">
+                    {t.heroSubtitle}
+                  </p>
+                </div>
+
+                {/* Research Form Container */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    runAnalysis();
                   }}
+                  className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "w-8 h-8 rounded-lg flex items-center justify-center",
-                      report.status === 'completed' ? "bg-emerald-50 text-emerald-600" : 
-                      report.status === 'loading' ? "bg-black/5 text-black animate-pulse" : "bg-black/5 text-black/20"
-                    )}>
-                      {report.status === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : report.icon}
-                    </div>
-                    <span className="text-sm font-medium">{report.title.split(' ')[0]}</span>
-                  </div>
-                  {report.status !== 'idle' && <ChevronRight className="w-4 h-4 opacity-40" />}
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* Right Column: Content Viewer */}
-        <div className="lg:col-span-8">
-          <AnimatePresence mode="wait">
-            {!isAnalyzing && reports.every(r => r.status === 'idle') ? (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="h-full flex flex-col items-center justify-center text-center p-12 bg-white rounded-3xl border border-dashed border-black/10"
-              >
-                <div className="w-16 h-16 bg-black/5 rounded-full flex items-center justify-center mb-6">
-                  <BarChart3 className="w-8 h-8 text-black/20" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2">准备好开始分析了吗？</h3>
-                <p className="text-black/40 max-w-md">
-                  输入公司名称和股票代码，我们的 AI 将为您生成 10 个维度的深度投资分析报告。
-                </p>
-              </motion.div>
-            ) : (
-              <div className="space-y-8">
-                {/* Export Header */}
-                <div className="flex items-center justify-between mb-4 px-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                    <span className="text-sm font-medium text-black/60">
-                      {isAnalyzing ? "分析引擎运行中..." : "分析完成"}
-                    </span>
-                  </div>
-                  {!isAnalyzing && reports.some(r => r.status === 'completed') && (
-                    <div className="flex flex-col items-end gap-1">
-                      <button
-                        onClick={exportToPDF}
-                        disabled={isExporting}
-                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        title="下载完整分析报告"
-                      >
-                        {isExporting ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            正在导出报告...
-                          </>
-                        ) : (
-                          <>
-                            <Download className="w-4 h-4" />
-                            导出报告
-                          </>
-                        )}
-                      </button>
-                      {exportError && (
-                        <p className="text-xs text-red-500 font-medium">{exportError}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div id="report-content" className="space-y-8">
-                  {/* PDF 报告封面标头 */}
-                  <div className="bg-white rounded-3xl p-8 border border-black/5 shadow-sm flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                      <div className="text-xs font-bold tracking-wider uppercase text-emerald-600 mb-2">
-                        STOCKINSIGHT AI 投资研究分析报告
-                      </div>
-                      <h1 className="text-3xl font-extrabold text-black">
-                        {company.name} <span className="text-xl text-black/50 font-semibold">({company.ticker})</span>
-                      </h1>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                        {t.companyNameLabel}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder={t.companyNamePlaceholder}
+                        value={company.name}
+                        onChange={(e) => setCompany((prev) => ({ ...prev, name: e.target.value }))}
+                        className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600/20 focus:border-teal-600"
+                      />
                     </div>
-                    <div className="text-sm sm:text-right text-black/60 space-y-1">
-                      <div>所属行业：<span className="font-medium text-black">{company.industry || '综合'}</span></div>
-                      <div>生成日期：<span className="font-mono">{new Date().toLocaleDateString('zh-CN')}</span></div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                        {t.tickerLabel}
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder={t.tickerPlaceholder}
+                        value={company.ticker}
+                        onChange={(e) => setCompany((prev) => ({ ...prev, ticker: e.target.value }))}
+                        className="w-full px-3.5 py-2.5 text-sm font-mono bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600/20 focus:border-teal-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+                        {t.industryLabel}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={t.industryPlaceholder}
+                        value={company.industry}
+                        onChange={(e) =>
+                          setCompany((prev) => ({ ...prev, industry: e.target.value }))
+                        }
+                        className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-600/20 focus:border-teal-600"
+                      />
                     </div>
                   </div>
 
-                  {reports.filter(r => r.status !== 'idle').map((report) => (
-                    <motion.section 
-                      key={report.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      id={`report-${report.id}`}
-                      className={cn(
-                        "bg-white rounded-3xl p-8 shadow-sm border transition-all page-break-inside-avoid mb-8",
-                        activeReportId === report.id ? "border-black/20 ring-4 ring-black/5" : "border-black/5"
-                      )}
-                    >
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="w-12 h-12 bg-black text-white rounded-2xl flex items-center justify-center shadow-lg shadow-black/10">
-                        {report.icon}
-                      </div>
-                      <div>
-                        <div className="text-xs font-mono text-black/40 uppercase tracking-widest mb-1">Report 0{report.id}</div>
-                        <h2 className="text-2xl font-bold tracking-tight">{report.title}</h2>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        {t.depthLabel}
+                      </span>
+                      <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                        {(
+                          [
+                            { id: 'concise', label: t.depthConcise },
+                            { id: 'standard', label: t.depthStandard },
+                            { id: 'institutional', label: t.depthInstitutional },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setDepth(opt.id)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                              depth === opt.id
+                                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-xs'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
-                    {report.status === 'loading' ? (
-                      <div className="py-12 flex flex-col items-center justify-center gap-4 text-black/40">
-                        <Loader2 className="w-8 h-8 animate-spin" />
-                        <p className="text-sm animate-pulse">正在深度挖掘数据并生成报告...</p>
-                      </div>
-                    ) : report.status === 'error' ? (
-                      <div className="p-6 bg-red-50/80 rounded-2xl border border-red-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="flex items-start sm:items-center gap-3 text-red-700">
-                          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5 sm:mt-0" />
-                          <p className="text-sm font-medium">{report.content}</p>
+                    <button
+                      type="submit"
+                      disabled={!company.name.trim() || !company.ticker.trim()}
+                      className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <Search className="w-4 h-4" />
+                      {t.startAnalysisBtn}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              {/* Popular Market Presets (1-Click Launch) */}
+              <section className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">
+                      {t.presetsTitle}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {t.presetsSubtitle}
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 self-start">
+                    {(
+                      [
+                        { id: 'ALL', label: t.marketAll },
+                        { id: 'HK', label: t.marketHK },
+                        { id: 'US', label: t.marketUS },
+                        { id: 'A', label: t.marketA },
+                      ] as const
+                    ).map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => setMarketFilter(m.id)}
+                        className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                          marketFilter === m.id
+                            ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  {filteredPresets.map((preset) => (
+                    <button
+                      key={preset.ticker}
+                      onClick={() =>
+                        runAnalysis(
+                          {
+                            name: preset.name[lang],
+                            ticker: preset.ticker,
+                            industry: preset.industry[lang],
+                          },
+                          depth,
+                          lang
+                        )
+                      }
+                      className="group text-left bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 hover:border-teal-600/60 dark:hover:border-teal-500/60 rounded-xl p-4 transition-colors flex flex-col justify-between gap-3"
+                    >
+                      <div>
+                        <div className="flex items-baseline justify-between gap-2 mb-1">
+                          <span className="font-semibold text-sm text-slate-900 dark:text-slate-100 group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors">
+                            {preset.name[lang]}
+                          </span>
+                          <span className="font-mono text-xs text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
+                            {preset.ticker}
+                          </span>
                         </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          {marketLabel(preset.market, lang)} · {preset.industry[lang]}
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                        {preset.note[lang]}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {/* Recent Saved Reports Resume Strip */}
+              {library.length > 0 && (
+                <section className="space-y-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">
+                      {t.resumeTitle}
+                    </h2>
+                    <button
+                      onClick={() => setView('archive')}
+                      className="text-xs font-medium text-teal-700 dark:text-teal-400 hover:underline"
+                    >
+                      {t.resumeViewAll} ({library.length})
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    {library.slice(0, 3).map((rec) => {
+                      const done = rec.chapters.filter((c) => c.status === 'completed').length;
+                      return (
                         <button
-                          onClick={() => retrySingleReport(report.id)}
-                          disabled={isAnalyzing}
-                          className="self-end sm:self-auto flex items-center gap-1.5 px-3.5 py-2 bg-red-600 text-white rounded-xl text-xs font-medium hover:bg-red-700 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
+                          key={rec.id}
+                          onClick={() => openSavedRecord(rec)}
+                          className="text-left bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600 rounded-xl p-4 transition-colors"
                         >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          重试该维度
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">
+                              {rec.company.name}
+                            </span>
+                            {rec.starred && (
+                              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                            <span>{rec.company.ticker}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              {done}/10 {t.dimensionsUnit}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              {new Date(rec.updatedAt).toLocaleDateString(
+                                lang === 'en' ? 'en-US' : 'zh-CN'
+                              )}
+                            </span>
+                          </div>
                         </button>
-                      </div>
-                    ) : (
-                      <div className="prose prose-slate max-w-none prose-headings:font-bold prose-headings:tracking-tight prose-p:text-black/70 prose-li:text-black/70">
-                        <Markdown>{report.content}</Markdown>
-                      </div>
-                    )}
-                  </motion.section>
-                ))}
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+
+          {/* Active Report Workspace */}
+          {view === 'research' && hasStartedReport && (
+            <div className="max-w-4xl mx-auto space-y-6">
+              {/* Action & Reading Controls Toolbar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => handleToggleStar()}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                      starred
+                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <Star className={`w-3.5 h-3.5 ${starred ? 'fill-amber-400 text-amber-400' : ''}`} />
+                    {starred ? t.starred : t.addStar}
+                  </button>
+
+                  <select
+                    value={conviction}
+                    onChange={(e) => handleConvictionChange(e.target.value as ConvictionLevel)}
+                    aria-label="Conviction Rating"
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:border-teal-600"
+                  >
+                    {(Object.keys(CONVICTION_LABELS) as ConvictionLevel[]).map((key) => (
+                      <option key={key} value={key}>
+                        {t.ratingPrefix}
+                        {CONVICTION_LABELS[key][lang]}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => setWatermarkEnabled((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                      watermarkEnabled
+                        ? 'border-teal-600/40 bg-teal-50/70 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title={WATERMARK_TEXT}
+                  >
+                    <Stamp className="w-3.5 h-3.5" />
+                    {watermarkEnabled ? t.watermarkOn : t.watermarkOff}
+                  </button>
+
+                  <div className="inline-flex p-0.5 bg-slate-100 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <button
+                      onClick={() => setReadingMode('scroll')}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                        readingMode === 'scroll'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <ScrollText className="w-3.5 h-3.5" />
+                      {t.modeScroll}
+                    </button>
+                    <button
+                      onClick={() => setReadingMode('chapter')}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                        readingMode === 'chapter'
+                          ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-50 shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" />
+                      {t.modeChapter}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {isAnalyzing ? (
+                    <button
+                      onClick={stopAnalysis}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      {t.stopGenerating} ({completedCount}/10)
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => runAnalysis(company, depth, lang)}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        {t.rerunAll}
+                      </button>
+
+                      {completedCount > 0 && (
+                        <>
+                          <button
+                            onClick={() =>
+                              downloadMarkdownFile(
+                                company,
+                                chapters,
+                                synthesis,
+                                notes,
+                                lang,
+                                watermarkEnabled
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition-colors whitespace-nowrap shrink-0"
+                          >
+                            <FileCode2 className="w-3.5 h-3.5" />
+                            Markdown
+                          </button>
+                          <button
+                            onClick={handleExportPDF}
+                            disabled={isExporting}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0"
+                          >
+                            {isExporting ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {t.exportingReport}
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-4 h-4" />
+                                {t.exportReport}
+                              </>
+                            )}
+                          </button>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
-            )}
-          </AnimatePresence>
-        </div>
-      </main>
 
-      {/* Footer */}
-      <footer className="max-w-7xl mx-auto px-6 py-12 border-t border-black/5 text-center text-black/40 text-xs">
-        <p className="mb-2">
-          © 2026 <a href="http://stock.meloon.top" target="_blank" rel="noopener noreferrer" className="hover:text-black transition-colors">StockInsight AI</a>. 
-          投资有风险，入市需谨慎。分析报告仅供参考，不构成投资建议。
-        </p>
-        <p><a href="http://stock.meloon.top" target="_blank" rel="noopener noreferrer" className="underline hover:text-black">stock.meloon.top</a></p>
+              {exportError && (
+                <div className="p-3.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 text-xs text-rose-700 dark:text-rose-300">
+                  {exportError}
+                </div>
+              )}
+
+              {/* Generation Progress Bar while running */}
+              {isAnalyzing && (
+                <div className="bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-600 dark:text-teal-400" />
+                      {t.generatingProgress}
+                    </span>
+                    <span className="font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                      {completedCount} / 10
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-teal-600 dark:bg-teal-400 transition-all duration-300"
+                      style={{ width: `${Math.max(6, (completedCount / 10) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Exportable Report Content Wrapper with Watermark Overlay */}
+              <div id="report-content" className="relative space-y-6">
+                <ReportWatermarkOverlay enabled={watermarkEnabled} />
+
+                {/* Report Masthead */}
+                <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="text-xs font-medium text-teal-700 dark:text-teal-400">
+                      {t.reportBrandTag}
+                    </div>
+                    <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-50">
+                      {company.name}
+                    </h1>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                      <span>{company.ticker}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="font-sans">{company.industry || t.generalIndustry}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {new Date(createdAt).toLocaleDateString(lang === 'en' ? 'en-US' : 'zh-CN')}
+                      </span>
+                      {watermarkEnabled && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>{WATERMARK_TEXT}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="sm:text-right text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                    <div>
+                      {t.ratingPrefix}
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
+                        {CONVICTION_LABELS[conviction][lang]}
+                      </span>
+                    </div>
+                    <div className="font-mono tabular-nums">
+                      {t.completionLabel}：{completedCount} / 10
+                    </div>
+                  </div>
+                </div>
+
+                {/* Executive Synthesis & 5-Axis Radar Card */}
+                {(synthesis ||
+                  isSynthesizing ||
+                  synthesisError ||
+                  (!isAnalyzing && completedCount >= 3)) && (
+                  <section className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 page-break-inside-avoid">
+                    <div className="flex items-center justify-between gap-4 mb-5">
+                      <div>
+                        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-50">
+                          {t.synthesisTitle}
+                        </h2>
+                        {synthesis?.moatType && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {t.moatPrefix}
+                            {synthesis.moatType}
+                          </p>
+                        )}
+                      </div>
+                      {!isSynthesizing && (
+                        <button
+                          onClick={() => generateSynthesis(company, chapters, lang)}
+                          className="no-export inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          {synthesis ? t.refreshSynthesis : t.generateSynthesis}
+                        </button>
+                      )}
+                    </div>
+
+                    {isSynthesizing ? (
+                      <div className="py-10 flex items-center justify-center gap-2.5 text-sm text-slate-500 dark:text-slate-400">
+                        <Loader2 className="w-4 h-4 animate-spin text-teal-600" />
+                        {t.synthesizingText}
+                      </div>
+                    ) : synthesisError ? (
+                      <div className="text-xs text-rose-600 dark:text-rose-400">
+                        {synthesisError}
+                      </div>
+                    ) : synthesis ? (
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                        <div className="lg:col-span-7 space-y-5">
+                          <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900">
+                            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                              {t.oneLineThesisLabel}
+                            </div>
+                            <p className="text-sm font-medium leading-relaxed text-slate-900 dark:text-slate-100">
+                              {synthesis.oneLineThesis}
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                                {t.bullCatalystsLabel}
+                              </div>
+                              <ul className="space-y-1.5 text-xs leading-relaxed text-slate-700 dark:text-slate-300 list-disc pl-4">
+                                {synthesis.bullCatalysts.map((item, idx) => (
+                                  <li key={idx}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="space-y-2">
+                              <div className="text-xs font-semibold text-rose-700 dark:text-rose-400">
+                                {t.bearRisksLabel}
+                              </div>
+                              <ul className="space-y-1.5 text-xs leading-relaxed text-slate-700 dark:text-slate-300 list-disc pl-4">
+                                {synthesis.bearRisks.map((item, idx) => (
+                                  <li key={idx}>{item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+
+                          <div className="pt-3 border-t border-slate-200 dark:border-slate-800">
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                              {t.trackingMetricsLabel}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-400">
+                              {synthesis.trackingMetrics.map((m, idx) => (
+                                <div key={idx} className="flex items-start gap-2">
+                                  <span className="font-mono text-teal-700 dark:text-teal-400">
+                                    {idx + 1}.
+                                  </span>
+                                  <span>{m}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="lg:col-span-5">
+                          <RadarProfileChart dimensions={synthesis.dimensions} lang={lang} />
+                        </div>
+                      </div>
+                    ) : null}
+                  </section>
+                )}
+
+                {/* Personal Investment Thesis Memo */}
+                <section
+                  className={`bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 ${
+                    !notes.trim() ? 'no-export' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <label
+                      htmlFor="personal-memo"
+                      className="text-sm font-bold text-slate-900 dark:text-slate-50"
+                    >
+                      {t.memoTitle}
+                    </label>
+                    <span className="text-xs text-slate-400 font-mono tabular-nums">
+                      {notes.length} {t.charsUnit}
+                    </span>
+                  </div>
+                  <textarea
+                    id="personal-memo"
+                    rows={3}
+                    value={notes}
+                    onChange={(e) => handleNotesChange(e.target.value)}
+                    placeholder={t.memoPlaceholder}
+                    className="w-full px-3.5 py-2.5 text-sm bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-600/20 focus:border-teal-600 leading-relaxed"
+                  />
+                </section>
+
+                {/* Single-Chapter Navigation Bar */}
+                {readingMode === 'chapter' && (
+                  <div className="no-export flex items-center justify-between bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3">
+                    <button
+                      onClick={() => setFocusedChapterId((prev) => Math.max(1, prev - 1))}
+                      disabled={focusedChapterId <= 1}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:text-teal-700 dark:hover:text-teal-400"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      {t.prevChapter}
+                    </button>
+                    <span className="font-mono text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                      {t.dimensionLabel} {focusedChapterId} / 10
+                    </span>
+                    <button
+                      onClick={() => setFocusedChapterId((prev) => Math.min(10, prev + 1))}
+                      disabled={focusedChapterId >= 10}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300 disabled:opacity-30 hover:text-teal-700 dark:hover:text-teal-400"
+                    >
+                      {t.nextChapter}
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                {/* 10-Dimension Chapters */}
+                <div className="space-y-6">
+                  {visibleChapters.map((ch) => {
+                    const def = ANALYSIS_STEPS.find((s) => s.id === ch.id)!;
+                    return (
+                      <section
+                        key={ch.id}
+                        id={`report-${ch.id}`}
+                        className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-8 page-break-inside-avoid"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-5 border-b border-slate-200 dark:border-slate-800">
+                          <div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400 mb-0.5">
+                              {def.category[lang]} · {def.subtitle[lang]}
+                            </div>
+                            <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-50">
+                              {def.title[lang]}
+                            </h2>
+                          </div>
+                          <div className="no-export flex items-center gap-2 shrink-0">
+                            {ch.status === 'completed' && (
+                              <button
+                                onClick={() => {
+                                  const el = document.getElementById('followup-section');
+                                  el?.scrollIntoView({ behavior: 'smooth' });
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-400 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+                              >
+                                <MessageSquarePlus className="w-3.5 h-3.5" />
+                                {t.followupAction}
+                              </button>
+                            )}
+                            {!isAnalyzing && (
+                              <button
+                                onClick={() => retrySingleChapter(ch.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-teal-700 dark:hover:text-teal-400 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+                              >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                {ch.status === 'idle' ? t.generateDimension : t.rewriteDimension}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {ch.status === 'loading' ? (
+                          <div className="py-10 flex flex-col items-center justify-center gap-3 text-slate-500 dark:text-slate-400">
+                            <Loader2 className="w-6 h-6 animate-spin text-teal-600 dark:text-teal-400" />
+                            <p className="text-sm">
+                              {t.analyzingDimension} ({def.shortTitle[lang]})
+                            </p>
+                          </div>
+                        ) : ch.status === 'error' ? (
+                          <div className="p-4 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-start gap-2.5 text-rose-700 dark:text-rose-300 text-sm">
+                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                              <span>{ch.content}</span>
+                            </div>
+                            <button
+                              onClick={() => retrySingleChapter(ch.id)}
+                              disabled={isAnalyzing}
+                              className="self-end sm:self-auto px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-medium whitespace-nowrap"
+                            >
+                              {t.retryNow}
+                            </button>
+                          </div>
+                        ) : ch.status === 'idle' ? (
+                          <div className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            {t.idleDimension}
+                          </div>
+                        ) : (
+                          <MarkdownRenderer content={ch.content} />
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Interactive Follow-Up Q&A Panel */}
+              {completedCount > 0 && (
+                <FollowUpPanel
+                  company={company}
+                  messages={followUps}
+                  contextSummary={reportContextSummary}
+                  lang={lang}
+                  onAddMessages={handleAddFollowUps}
+                  onSaveToNotes={(snippet) =>
+                    handleNotesChange(notes ? `${notes}\n${snippet}` : snippet.trim())
+                  }
+                />
+              )}
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Quiet Institutional Footer */}
+      <footer className="border-t border-slate-200 dark:border-slate-800 px-6 py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+        <p>{t.footerText}</p>
       </footer>
     </div>
   );

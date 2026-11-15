@@ -3,39 +3,107 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>StockInsight AI - 10点深度股票分析报告</title>
-    <meta name="description" content="专业级股票分析工具，利用 Gemini AI 提供 10 个维度的公司深度研究报告，涵盖业务、收入、行业、竞争、财务等关键领域。" />
-    <meta name="keywords" content="股票分析, 投资研究, AI 股票洞察, 公司深度研究, 财务分析, Gemini AI, 投资报告" />
-    
-    <!-- Favicon -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%23000000%22/><g transform=%22translate(18, 18) scale(2.667)%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%222.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%2222 7 13.5 15.5 8.5 10.5 2 17%22/><polyline points=%2216 7 22 7 22 13%22/></g></svg>">
-    
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://ais-pre-bx74wfkows2mja4hhd3phw-41760417092.us-west2.run.app" />
-    <meta property="og:title" content="StockInsight AI - 10点深度股票分析报告" />
-    <meta property="og:description" content="专业级股票分析工具，利用 Gemini AI 提供 10 个维度的公司深度研究报告。" />
-    <meta property="og:image" content="https://picsum.photos/seed/stockinsight/1200/630" />
+    <title>StockInsight AI – 10维深度股票研究与买方投研分析平台</title>
+    <meta
+      name="description"
+      content="StockInsight AI 为投资者提供A股、港股与美股10维深度基本面研报、五维雷达画像、双股横向对比与研报追问，支持PDF导出。"
+    />
+    <meta
+      name="keywords"
+      content="StockInsight AI,股票分析,投资研究,基本面分析,AI股票研报,公司估值,五维雷达图,双股对比,Equity Research,Stock Analysis"
+    />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://stock.meloon.top/" />
 
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://ais-pre-bx74wfkows2mja4hhd3phw-41760417092.us-west2.run.app" />
-    <meta property="twitter:title" content="StockInsight AI - 10点深度股票分析报告" />
-    <meta property="twitter:description" content="专业级股票分析工具，利用 Gemini AI 提供 10 个维度的公司深度研究报告。" />
-    <meta property="twitter:image" content="https://picsum.photos/seed/stockinsight/1200/630" />
+    <!-- Fonts: Plus Jakarta Sans + DM Sans + JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400..700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Favicon -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%230F766E%22/><g transform=%22translate(18, 18) scale(2.667)%22 fill=%22none%22 stroke=%22%23ffffff%22 stroke-width=%222.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22><polyline points=%2222 7 13.5 15.5 8.5 10.5 2 17%22/><polyline points=%2216 7 22 7 22 13%22/></g></svg>"
+    />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="StockInsight AI" />
+    <meta property="og:url" content="https://stock.meloon.top/" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <meta property="og:title" content="StockInsight AI – 10维深度股票研究与买方投研分析平台" />
+    <meta
+      property="og:description"
+      content="Generate 10-point fundamental equity research reports, 5-axis radar profiles, side-by-side stock comparisons, and watermarked PDF memos."
+    />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://stock.meloon.top/" />
+    <meta name="twitter:title" content="StockInsight AI – 10-Point Fundamental Stock Research" />
+    <meta
+      name="twitter:description"
+      content="Generate 10-point equity research reports across US, HK, and A-share markets with 5-axis radar profiles, follow-up Q&A, and PDF export."
+    />
+
+    <!-- Schema.org Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "StockInsight AI",
+        "url": "https://stock.meloon.top/",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "All",
+        "inLanguage": ["zh-CN", "en"],
+        "description": "AI-powered 10-point fundamental equity research workstation covering business model, revenue breakdown, industry tailwinds, moat, financials, risks, valuation, and long-term thesis.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "StockInsight AI 包含哪 10 个股票分析维度？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "涵盖业务理解、收入分解、行业背景、竞争格局、财务质量、风险与下跌、管理层与执行、牛熊情景、估值思考与长期投资论文共 10 个核心维度。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What markets and languages does StockInsight AI support?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "StockInsight AI supports global equities including US, Hong Kong, and China A-share companies in both English and Simplified Chinese, with PDF and Markdown report exports."
+            }
+          }
+        ]
+      }
+    </script>
+
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-BYMF05F0ZK"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-
       gtag('config', 'G-BYMF05F0ZK');
     </script>
   </head>
-  <body>
+  <body class="bg-slate-50 text-slate-900 dark:bg-[#0B1120] dark:text-slate-100 antialiased selection:bg-teal-500/20">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
